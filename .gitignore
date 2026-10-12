@@ -1,0 +1,73 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Vector stores
+faiss_index/
+chroma_db/
+vector_store/
+
+# User uploads
+uploads/
+temp/
+tmp/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Model files
+*.bin
+*.pt
+*.onnx
+*.safetensors
+
+# Coverage
+coverage/
+.coverage
+htmlcov/
+
+# Next.js
+.vercel
+*.tsbuildinfo
+next-env.d.ts

@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+/* ============================================
+   THE AGENT — Design Tokens
+   ============================================ */
+@theme {
+  /* Brand colors */
+  --color-obsidian: #05080D;
+  --color-space: #0A1423;
+  --color-cyan: #00DFFF;
+  --color-neon: #008CFF;
+  --color-silver: #C5D2DF;
+  --color-pure: #F5FAFF;
+
+  /* Fonts */
+  --font-sans: var(--font-space-grotesk), system-ui, sans-serif;
+  --font-display: var(--font-orbitron), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), monospace;
+
+  /* Shadows */
+  --shadow-glow: 0 0 24px rgba(0, 223, 255, 0.35);
+  --shadow-glow-lg: 0 0 48px rgba(0, 223, 255, 0.45);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+  /* Animations */
+  --animate-scan: scan 3s linear infinite;
+  --animate-orbit: orbit 8s linear infinite;
+
+  @keyframes scan {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  @keyframes orbit {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: #05080D;
+    color: #F5FAFF;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(0, 223, 255, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 80% 90%, rgba(0, 140, 255, 0.06) 0%, transparent 50%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(10, 20, 35, 0.5);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0, 223, 255, 0.3);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 223, 255, 0.6);
+  }
+}
+
+/* ============================================
+   Custom Utilities
+   ============================================ */
+@utility glass {
+  background-color: rgba(10, 20, 35, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(0, 223, 255, 0.2);
+}
+
+@utility glass-panel {
+  background-color: rgba(10, 20, 35, 0.6);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(0, 223, 255, 0.1);
+  box-shadow: var(--shadow-panel);
+}
+
+@utility text-glow {
+  text-shadow: 0 0 20px rgba(0, 223, 255, 0.6);
+}
+
+@utility bg-grid-pattern {
+  background-image:
+    linear-gradient(rgba(0, 223, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 223, 255, 0.06) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+@utility bg-radial-glow {
+  background-image: radial-gradient(
+    circle at center,
+    rgba(0, 223, 255, 0.15) 0%,
+    transparent 70%
+  );
+}
