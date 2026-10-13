@@ -1,0 +1,74 @@
+/* THE AGENT - Code Syntax Highlighting Theme */
+
+.hljs {
+  color: #c5d2df;
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #4a5f7a;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-doctag,
+.hljs-type,
+.hljs-name,
+.hljs-strong {
+  color: #00dfff;
+  font-weight: 600;
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-meta .hljs-string {
+  color: #7ee787;
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-template-variable,
+.hljs-variable,
+.hljs-link {
+  color: #ffa657;
+}
+
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+  color: #79c0ff;
+  font-weight: 600;
+}
+
+.hljs-built_in,
+.hljs-class .hljs-title {
+  color: #ff7b72;
+}
+
+.hljs-attr,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-meta,
+.hljs-params {
+  color: #d2a8ff;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-deletion {
+  color: #ff7b72;
+}
+
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #79c0ff;
+}

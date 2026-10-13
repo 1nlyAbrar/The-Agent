@@ -1,14 +1,28 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { streamChat, type ChatMessage } from "@/lib/api";
+import {
+  streamChatWithRag,
+  type ChatMessage,
+  type Source,
+} from "@/lib/api";
+
+export interface StreamOptions {
+  useDocuments?: boolean;
+  onSources?: (sources: Source[]) => void;
+}
 
 export interface UseChatStreamReturn {
   isStreaming: boolean;
   streamingContent: string;
   error: string | null;
-  startStream: (messages: ChatMessage[]) => Promise<void>;
+  startStream: (
+    messages: ChatMessage[],
+    onComplete?: (finalContent: string) => void,
+    options?: StreamOptions
+  ) => Promise<void>;
   stopStream: () => void;
+  reset: () => void;
 }
 
 export function useChatStream(): UseChatStreamReturn {
@@ -25,8 +39,18 @@ export function useChatStream(): UseChatStreamReturn {
     setIsStreaming(false);
   }, []);
 
+  const reset = useCallback(() => {
+    stopStream();
+    setStreamingContent("");
+    setError(null);
+  }, [stopStream]);
+
   const startStream = useCallback(
-    async (messages: ChatMessage[]) => {
+    async (
+      messages: ChatMessage[],
+      onComplete?: (finalContent: string) => void,
+      options?: StreamOptions
+    ) => {
       stopStream();
       setError(null);
       setStreamingContent("");
@@ -35,26 +59,36 @@ export function useChatStream(): UseChatStreamReturn {
       const controller = new AbortController();
       abortRef.current = controller;
 
+      let accumulated = "";
+
       try {
-        let accumulated = "";
-        for await (const chunk of streamChat(messages, { signal: controller.signal })) {
+        for await (const chunk of streamChatWithRag(messages, {
+          signal: controller.signal,
+          useDocuments: options?.useDocuments,
+          onSources: options?.onSources,
+        })) {
           accumulated += chunk;
           setStreamingContent(accumulated);
         }
+
+        if (onComplete && accumulated.trim()) {
+          onComplete(accumulated);
+        }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
-          // user stopped; not an error
+          // user stopped
         } else {
           const msg = err instanceof Error ? err.message : "Unknown error";
           setError(msg);
         }
       } finally {
         setIsStreaming(false);
+        setStreamingContent("");
         abortRef.current = null;
       }
     },
     [stopStream]
   );
 
-  return { isStreaming, streamingContent, error, startStream, stopStream };
+  return { isStreaming, streamingContent, error, startStream, stopStream, reset };
 }

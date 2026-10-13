@@ -71,3 +71,28 @@ htmlcov/
 .vercel
 *.tsbuildinfo
 next-env.d.ts
+# RAG data
+backend/uploads/
+backend/.rag_store/
+
+# Backup files (dev-only)
+*.bak
+*.broken
+*.before-anim
+*.pre-persistence
+*.backup
+
+# Test files
+backend/test-doc.txt
+test-doc.txt
+test-chat.json
+test-speed.json
+check_db.py
+
+# SQLite database
+the_agent.db
+*.db-journal
+
+# RAG store
+backend/.rag_store/
+backend/uploads/
