@@ -9,12 +9,16 @@ from app.core.config import get_settings
 
 
 class DeepSeekError(Exception):
+    """Raised when DeepSeek API returns an error."""
+
     def __init__(self, message: str, status_code: int | None = None):
         super().__init__(message)
         self.status_code = status_code
 
 
 class DeepSeekClient:
+    """Async client for DeepSeek-compatible chat completions API."""
+
     def __init__(self) -> None:
         self.settings = get_settings()
         self._client: httpx.AsyncClient | None = None
@@ -44,7 +48,7 @@ class DeepSeekClient:
     ) -> AsyncIterator[str]:
         if not self.settings.is_deepseek_configured:
             raise DeepSeekError(
-                "DeepSeek API key is not configured. Add DEEPSEEK_API_KEY to backend/.env",
+                "AI provider key not configured.",
                 status_code=503,
             )
 
@@ -61,44 +65,45 @@ class DeepSeekClient:
 
         try:
             async with client.stream("POST", "/chat/completions", json=payload) as response:
-                                if response.status_code != 200:
+                if response.status_code != 200:
                     error_body = await response.aread()
                     raw_text = error_body.decode("utf-8", errors="replace")
 
-                    message: str
+                    message = raw_text
                     try:
                         error_json = json.loads(raw_text)
 
-                        # Handle both dict-style and list-style errors
                         if isinstance(error_json, dict):
-                            err = error_json.get("error", {})
+                            err = error_json.get("error", error_json)
                             if isinstance(err, dict):
                                 message = err.get("message", raw_text)
                             elif isinstance(err, list) and err:
                                 first = err[0]
-                                if isinstance(first, dict):
-                                    message = first.get("message", str(first))
-                                else:
-                                    message = str(first)
+                                message = (
+                                    first.get("message", str(first))
+                                    if isinstance(first, dict)
+                                    else str(first)
+                                )
                             else:
-                                message = str(err) or raw_text
+                                message = str(err)
                         elif isinstance(error_json, list) and error_json:
                             first = error_json[0]
-                            if isinstance(first, dict):
-                                message = first.get("message", str(first))
-                            else:
-                                message = str(first)
-                        else:
-                            message = raw_text
-
+                            message = (
+                                first.get("message", str(first))
+                                if isinstance(first, dict)
+                                else str(first)
+                            )
                     except json.JSONDecodeError:
-                        if "cloudflare" in raw_text.lower() or "<!doctype" in raw_text.lower():
+                        low = raw_text.lower()
+                        if "cloudflare" in low or "<!doctype" in low:
                             message = (
                                 "AI provider is temporarily unavailable. "
                                 "Please try again in a minute."
                             )
                         else:
-                            message = raw_text[:200] + ("..." if len(raw_text) > 200 else "")
+                            message = raw_text[:200] + (
+                                "..." if len(raw_text) > 200 else ""
+                            )
 
                     raise DeepSeekError(message, status_code=response.status_code)
 
@@ -122,12 +127,12 @@ class DeepSeekClient:
 
         except httpx.TimeoutException as exc:
             raise DeepSeekError(
-                f"DeepSeek request timed out after {self.settings.request_timeout}s",
+                f"AI provider request timed out after {self.settings.request_timeout}s",
                 status_code=504,
             ) from exc
         except httpx.RequestError as exc:
             raise DeepSeekError(
-                f"Failed to reach DeepSeek: {exc}",
+                f"Failed to reach AI provider: {exc}",
                 status_code=502,
             ) from exc
 
