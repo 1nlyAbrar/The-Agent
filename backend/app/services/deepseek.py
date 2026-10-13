@@ -61,17 +61,46 @@ class DeepSeekClient:
 
         try:
             async with client.stream("POST", "/chat/completions", json=payload) as response:
-                if response.status_code != 200:
+                                if response.status_code != 200:
                     error_body = await response.aread()
+                    raw_text = error_body.decode("utf-8", errors="replace")
+
+                    message: str
                     try:
-                        error_json = json.loads(error_body)
-                        message = error_json.get("error", {}).get("message", str(error_body))
+                        error_json = json.loads(raw_text)
+
+                        # Handle both dict-style and list-style errors
+                        if isinstance(error_json, dict):
+                            err = error_json.get("error", {})
+                            if isinstance(err, dict):
+                                message = err.get("message", raw_text)
+                            elif isinstance(err, list) and err:
+                                first = err[0]
+                                if isinstance(first, dict):
+                                    message = first.get("message", str(first))
+                                else:
+                                    message = str(first)
+                            else:
+                                message = str(err) or raw_text
+                        elif isinstance(error_json, list) and error_json:
+                            first = error_json[0]
+                            if isinstance(first, dict):
+                                message = first.get("message", str(first))
+                            else:
+                                message = str(first)
+                        else:
+                            message = raw_text
+
                     except json.JSONDecodeError:
-                        message = error_body.decode("utf-8", errors="replace")
-                    raise DeepSeekError(
-                        f"DeepSeek API error: {message}",
-                        status_code=response.status_code,
-                    )
+                        if "cloudflare" in raw_text.lower() or "<!doctype" in raw_text.lower():
+                            message = (
+                                "AI provider is temporarily unavailable. "
+                                "Please try again in a minute."
+                            )
+                        else:
+                            message = raw_text[:200] + ("..." if len(raw_text) > 200 else "")
+
+                    raise DeepSeekError(message, status_code=response.status_code)
 
                 async for line in response.aiter_lines():
                     if not line or not line.startswith("data: "):
