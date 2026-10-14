@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     deepseek_api_key: str = ""
+    google_api_key: str = ""
     deepseek_base_url: str = "https://tokenharbor.ai/v1"
     deepseek_model: str = "deepseek-v4-flash"
     deepseek_reasoning_model: str = "deepseek-v4-flash"

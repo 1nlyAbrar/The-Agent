@@ -1,4 +1,4 @@
-"""Gemini Vision service — image understanding via Google's API."""
+﻿"""Gemini Vision service — image understanding via Google's API."""
 
 import base64
 import logging
@@ -40,11 +40,22 @@ class VisionError(Exception):
 
 def _get_api_key() -> str:
     """Get the Google API key from settings."""
-    key = get_settings().deepseek_api_key.strip()
+    settings = get_settings()
+    key = (settings.google_api_key or "").strip()
+    if not key:
+        alt = settings.deepseek_api_key.strip()
+        if alt.startswith("AIza"):
+            key = alt
+        else:
+            raise VisionError(
+                "Vision requires GOOGLE_API_KEY environment variable. "
+                "Add it in Render with your Google Gemini API key.",
+                status_code=400,
+            )
     if not key.startswith("AIza"):
         raise VisionError(
-            "Vision requires a Google Gemini API key (starts with 'AIza'). "
-            "Your current key is not compatible.",
+            "GOOGLE_API_KEY must start with 'AIza'. "
+            "Get yours at https://aistudio.google.com/apikey",
             status_code=400,
         )
     return key
