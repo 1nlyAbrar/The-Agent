@@ -9,6 +9,7 @@ from app.api.routes import router as api_router
 from app.api.documents import router as documents_router
 from app.api.conversations import router as conversations_router
 from app.api.memory import router as memory_router
+from app.api.vision import router as vision_router
 from app.core.config import get_settings
 from app.db.session import init_db
 from app.services.deepseek import get_deepseek_client
@@ -39,6 +40,7 @@ app.include_router(api_router)
 app.include_router(documents_router)
 app.include_router(conversations_router)
 app.include_router(memory_router)
+app.include_router(vision_router)
 
 
 @app.get("/")
