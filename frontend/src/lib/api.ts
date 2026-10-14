@@ -1,6 +1,26 @@
 ﻿const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /* ============================================
+   Device ID — unique per browser
+   ============================================ */
+
+function getDeviceId(): string {
+  if (typeof window === "undefined") return "server";
+  let id = localStorage.getItem("agent-device-id");
+  if (!id) {
+    id =
+      crypto.randomUUID?.() ??
+      `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem("agent-device-id", id);
+  }
+  return id;
+}
+
+export function deviceHeaders(): HeadersInit {
+  return { "X-Device-ID": getDeviceId() };
+}
+
+/* ============================================
    Base types
    ============================================ */
 
@@ -10,7 +30,7 @@ export interface ChatMessage {
 }
 
 /* ============================================
-   Plain streaming chat (no RAG)
+   Plain streaming chat
    ============================================ */
 
 export async function* streamChat(
@@ -19,7 +39,7 @@ export async function* streamChat(
 ): AsyncGenerator<string, void, unknown> {
   const response = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...deviceHeaders() },
     body: JSON.stringify({
       messages,
       model: options.model,
@@ -58,7 +78,8 @@ export async function* streamChat(
         try {
           const parsed = JSON.parse(data);
           if (eventType === "token" && parsed.content) yield parsed.content;
-          else if (eventType === "error") throw new Error(parsed.message ?? "Streaming error");
+          else if (eventType === "error")
+            throw new Error(parsed.message ?? "Streaming error");
         } catch (err) {
           if (err instanceof SyntaxError) continue;
           throw err;
@@ -80,7 +101,9 @@ export async function checkBackendHealth(): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_URL}/api/health`);
+    const res = await fetch(`${API_URL}/api/health`, {
+      headers: { ...deviceHeaders() },
+    });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
     const data = await res.json();
     return { ok: true, model: data.model };
@@ -121,7 +144,9 @@ export interface Source {
    ============================================ */
 
 export async function listDocuments(): Promise<Document[]> {
-  const res = await fetch(`${API_URL}/api/documents`);
+  const res = await fetch(`${API_URL}/api/documents`, {
+    headers: { ...deviceHeaders() },
+  });
   if (!res.ok) throw new Error(`Failed to list documents: HTTP ${res.status}`);
   const data = await res.json();
   return data.documents ?? [];
@@ -132,6 +157,7 @@ export async function uploadDocument(file: File): Promise<UploadResponse> {
   form.append("file", file);
   const res = await fetch(`${API_URL}/api/documents/upload`, {
     method: "POST",
+    headers: { ...deviceHeaders() },
     body: form,
   });
   if (!res.ok) {
@@ -144,6 +170,7 @@ export async function uploadDocument(file: File): Promise<UploadResponse> {
 export async function deleteDocument(documentId: string): Promise<void> {
   const res = await fetch(`${API_URL}/api/documents/${documentId}`, {
     method: "DELETE",
+    headers: { ...deviceHeaders() },
   });
   if (!res.ok) throw new Error(`Delete failed: HTTP ${res.status}`);
 }
@@ -166,7 +193,7 @@ export async function* streamChatWithRag(
 ): AsyncGenerator<string, void, unknown> {
   const response = await fetch(`${API_URL}/api/chat/rag`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...deviceHeaders() },
     body: JSON.stringify({
       messages,
       model: options.model,
@@ -206,8 +233,10 @@ export async function* streamChatWithRag(
         try {
           const parsed = JSON.parse(data);
           if (eventType === "token" && parsed.content) yield parsed.content;
-          else if (eventType === "sources" && parsed.sources) options.onSources?.(parsed.sources);
-          else if (eventType === "error") throw new Error(parsed.message ?? "Streaming error");
+          else if (eventType === "sources" && parsed.sources)
+            options.onSources?.(parsed.sources);
+          else if (eventType === "error")
+            throw new Error(parsed.message ?? "Streaming error");
         } catch (err) {
           if (err instanceof SyntaxError) continue;
           throw err;
@@ -249,7 +278,9 @@ export interface ConversationSummary {
 }
 
 export async function listConversations(): Promise<ConversationSummary[]> {
-  const res = await fetch(`${API_URL}/api/conversations`);
+  const res = await fetch(`${API_URL}/api/conversations`, {
+    headers: { ...deviceHeaders() },
+  });
   if (!res.ok) throw new Error(`Failed to list conversations: HTTP ${res.status}`);
   return res.json();
 }
@@ -257,7 +288,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
 export async function createConversation(title?: string): Promise<ConversationRecord> {
   const res = await fetch(`${API_URL}/api/conversations`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...deviceHeaders() },
     body: JSON.stringify({ title: title ?? "New conversation" }),
   });
   if (!res.ok) throw new Error(`Failed to create conversation: HTTP ${res.status}`);
@@ -265,7 +296,9 @@ export async function createConversation(title?: string): Promise<ConversationRe
 }
 
 export async function getConversation(id: string): Promise<ConversationRecord> {
-  const res = await fetch(`${API_URL}/api/conversations/${id}`);
+  const res = await fetch(`${API_URL}/api/conversations/${id}`, {
+    headers: { ...deviceHeaders() },
+  });
   if (!res.ok) throw new Error(`Failed to load conversation: HTTP ${res.status}`);
   return res.json();
 }
@@ -273,7 +306,7 @@ export async function getConversation(id: string): Promise<ConversationRecord> {
 export async function renameConversation(id: string, title: string): Promise<ConversationRecord> {
   const res = await fetch(`${API_URL}/api/conversations/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...deviceHeaders() },
     body: JSON.stringify({ title }),
   });
   if (!res.ok) throw new Error(`Rename failed: HTTP ${res.status}`);
@@ -283,6 +316,7 @@ export async function renameConversation(id: string, title: string): Promise<Con
 export async function deleteConversation(id: string): Promise<void> {
   const res = await fetch(`${API_URL}/api/conversations/${id}`, {
     method: "DELETE",
+    headers: { ...deviceHeaders() },
   });
   if (!res.ok && res.status !== 204) {
     throw new Error(`Delete failed: HTTP ${res.status}`);
@@ -297,7 +331,7 @@ export async function addMessage(
 ): Promise<ConversationMessage> {
   const res = await fetch(`${API_URL}/api/conversations/${conversationId}/messages`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...deviceHeaders() },
     body: JSON.stringify({ role, content, sources: sources ?? null }),
   });
   if (!res.ok) throw new Error(`Failed to save message: HTTP ${res.status}`);
@@ -306,8 +340,86 @@ export async function addMessage(
 
 export async function searchConversations(query: string): Promise<ConversationSummary[]> {
   const res = await fetch(
-    `${API_URL}/api/conversations/search?q=${encodeURIComponent(query)}`
+    `${API_URL}/api/conversations/search?q=${encodeURIComponent(query)}`,
+    { headers: { ...deviceHeaders() } }
   );
   if (!res.ok) throw new Error(`Search failed: HTTP ${res.status}`);
+  return res.json();
+}
+
+/* ============================================
+   Memory API
+   ============================================ */
+
+export interface UserFact {
+  id: string;
+  key: string;
+  value: string;
+  confidence: number;
+  updated_at: string | null;
+}
+
+export async function listFacts(): Promise<UserFact[]> {
+  const res = await fetch(`${API_URL}/api/memory`, {
+    headers: { ...deviceHeaders() },
+  });
+  if (!res.ok) throw new Error(`Failed to list facts: HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function deleteFact(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/memory/${id}`, {
+    method: "DELETE",
+    headers: { ...deviceHeaders() },
+  });
+  if (!res.ok && res.status !== 204) throw new Error(`Delete failed: HTTP ${res.status}`);
+}
+
+export async function clearAllFacts(): Promise<{ removed: number }> {
+  const res = await fetch(`${API_URL}/api/memory`, {
+    method: "DELETE",
+    headers: { ...deviceHeaders() },
+  });
+  if (!res.ok) throw new Error(`Clear failed: HTTP ${res.status}`);
+  return res.json();
+}
+
+/* ============================================
+   Vision API — images
+   ============================================ */
+
+export interface VisionResponse {
+  status: string;
+  filename: string;
+  question: string;
+  response: string;
+}
+
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif"];
+
+function isImage(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+export async function analyzeImage(
+  file: File,
+  question?: string
+): Promise<VisionResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (question) form.append("question", question);
+
+  const res = await fetch(`${API_URL}/api/vision/analyze`, {
+    method: "POST",
+    headers: { ...deviceHeaders() },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Vision failed (HTTP ${res.status}): ${text}`);
+  }
+
   return res.json();
 }
