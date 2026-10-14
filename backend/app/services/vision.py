@@ -1,4 +1,4 @@
-﻿"""Gemini Vision service — image understanding via Google's API."""
+﻿"""Vision service — image understanding via Groq's API."""
 
 import base64
 import logging
@@ -10,7 +10,8 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+GROQ_VISION_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_VISION_MODEL = "qwen/qwen3.6-27b"
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 SUPPORTED_IMAGE_TYPES = {
@@ -39,23 +40,12 @@ class VisionError(Exception):
 
 
 def _get_api_key() -> str:
-    """Get the Google API key from settings."""
+    """Get the API key from settings (should be a Groq key)."""
     settings = get_settings()
-    key = (settings.google_api_key or "").strip()
+    key = (settings.deepseek_api_key or "").strip()
     if not key:
-        alt = settings.deepseek_api_key.strip()
-        if alt.startswith("AIza"):
-            key = alt
-        else:
-            raise VisionError(
-                "Vision requires GOOGLE_API_KEY environment variable. "
-                "Add it in Render with your Google Gemini API key.",
-                status_code=400,
-            )
-    if not key.startswith("AIza"):
         raise VisionError(
-            "GOOGLE_API_KEY must start with 'AIza'. "
-            "Get yours at https://aistudio.google.com/apikey",
+            "No API key configured. Set DEEPSEEK_API_KEY with your Groq key.",
             status_code=400,
         )
     return key
@@ -80,39 +70,46 @@ def _encode_image(path: Path) -> tuple[str, str]:
 
 
 async def analyze_image(path: Path, question: str) -> str:
-    """Send an image + question to Gemini Vision. Returns text response."""
+    """Send an image + question to Groq Vision. Returns text response."""
     api_key = _get_api_key()
     image_b64, mime = _encode_image(path)
 
     payload = {
-        "contents": [
+        "model": GROQ_VISION_MODEL,
+        "messages": [
             {
-                "parts": [
-                    {"text": VISION_PROMPT.format(question=question)},
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": VISION_PROMPT.format(question=question)},
                     {
-                        "inline_data": {
-                            "mime_type": mime,
-                            "data": image_b64,
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime};base64,{image_b64}"
                         }
                     },
                 ]
             }
-        ]
+        ],
+        "max_completion_tokens": 2048,
+        "temperature": 1,
     }
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
             resp = await client.post(
-                f"{GEMINI_API_URL}?key={api_key}",
+                GROQ_VISION_URL,
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
             )
         except httpx.RequestError as exc:
             raise VisionError(f"Network error: {exc}", status_code=502) from exc
 
     if resp.status_code != 200:
         raw = resp.text
-        logger.error("Gemini Vision error %s: %s", resp.status_code, raw[:300])
+        logger.error("Groq Vision error %s: %s", resp.status_code, raw[:300])
         raise VisionError(
             f"Vision API error: {raw[:200]}",
             status_code=resp.status_code,
@@ -121,13 +118,12 @@ async def analyze_image(path: Path, question: str) -> str:
     data = resp.json()
 
     try:
-        candidates = data.get("candidates", [])
-        if not candidates:
+        choices = data.get("choices", [])
+        if not choices:
             raise VisionError("No response from vision model", status_code=500)
-        parts = candidates[0].get("content", {}).get("parts", [])
-        text = "".join(p.get("text", "") for p in parts)
-        if not text:
+        content = choices[0].get("message", {}).get("content", "")
+        if not content:
             raise VisionError("Empty response from vision model", status_code=500)
-        return text
+        return content
     except (KeyError, IndexError, TypeError) as exc:
         raise VisionError(f"Unexpected response format: {exc}", status_code=500) from exc
