@@ -4,14 +4,15 @@ import json
 import logging
 from typing import AsyncIterator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.api.deps import get_device_id
 from app.core.config import get_settings
+from app.db.session import SessionLocal
 from app.models.schemas import ChatMessage, ChatRequest
 from app.services.deepseek import DeepSeekError, get_deepseek_client
-from app.db.session import SessionLocal
 from app.services.memory import build_memory_context, extract_facts
 from app.services.rag import build_augmented_prompt
 
@@ -22,10 +23,6 @@ router = APIRouter(prefix="/api", tags=["chat"])
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
-
-# ============================================
-# Health
-# ============================================
 
 @router.get("/health")
 async def health() -> dict:
@@ -38,10 +35,6 @@ async def health() -> dict:
     }
 
 
-# ============================================
-# Plain chat (no RAG)
-# ============================================
-
 @router.post("/chat")
 async def chat_stream(request: ChatRequest) -> StreamingResponse:
     settings = get_settings()
@@ -49,7 +42,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     if not settings.is_deepseek_configured:
         raise HTTPException(
             status_code=503,
-            detail="DeepSeek API key not configured. See backend/.env",
+            detail="AI provider key not configured.",
         )
 
     client = get_deepseek_client()
@@ -83,10 +76,6 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     )
 
 
-# ============================================
-# RAG chat (with document context)
-# ============================================
-
 class RagChatRequest(BaseModel):
     messages: list[ChatMessage]
     model: str | None = None
@@ -95,26 +84,27 @@ class RagChatRequest(BaseModel):
 
 
 @router.post("/chat/rag")
-async def chat_with_rag(request: RagChatRequest) -> StreamingResponse:
-    """Chat with optional RAG augmentation from uploaded documents."""
+async def chat_with_rag(
+    request: RagChatRequest,
+    device_id: str = Depends(get_device_id),
+) -> StreamingResponse:
     settings = get_settings()
 
     if not settings.is_deepseek_configured:
         raise HTTPException(
             status_code=503,
-            detail="DeepSeek API key not configured. See backend/.env",
+            detail="AI provider key not configured.",
         )
 
     client = get_deepseek_client()
     messages = [m.model_dump() for m in request.messages]
 
-    # Extract latest user query for retrieval
     last_user = next((m for m in reversed(messages) if m["role"] == "user"), None)
     query = last_user["content"] if last_user else ""
-    
-    # Inject memory facts as a system message
+
+    # Inject memory facts specific to THIS device
     async with SessionLocal() as session:
-        memory_context = await build_memory_context(session)
+        memory_context = await build_memory_context(session, device_id)
     if memory_context:
         messages = [{"role": "system", "content": memory_context}] + messages
 
@@ -129,7 +119,6 @@ async def chat_with_rag(request: RagChatRequest) -> StreamingResponse:
 
     async def event_generator() -> AsyncIterator[str]:
         try:
-            # Emit sources first so the frontend can show them immediately
             if sources:
                 yield _sse("sources", {"sources": sources})
 
@@ -146,7 +135,6 @@ async def chat_with_rag(request: RagChatRequest) -> StreamingResponse:
 
             yield _sse("done", {})
 
-            # Auto-extract facts (non-fatal)
             try:
                 conversation_text = "\n".join(
                     f"{m['role']}: {m['content']}"
@@ -156,11 +144,12 @@ async def chat_with_rag(request: RagChatRequest) -> StreamingResponse:
                 conversation_text += f"\nassistant: {full_response}"
 
                 async with SessionLocal() as session:
-                    saved = await extract_facts(conversation_text, session)
+                    saved = await extract_facts(conversation_text, session, device_id)
                 if saved:
-                    logger.info("Extracted %d facts", len(saved))
+                    logger.info("Extracted %d facts for device %s", len(saved), device_id[:8])
             except Exception:
                 logger.exception("Fact extraction failed (non-fatal)")
+
         except DeepSeekError as exc:
             logger.error("DeepSeek error: %s", exc)
             yield _sse("error", {"message": str(exc), "status": exc.status_code})

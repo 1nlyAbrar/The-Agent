@@ -17,6 +17,7 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid4())
     )
+    device_id: Mapped[str] = mapped_column(String(64), index=True, default="default")
     title: Mapped[str] = mapped_column(String(200), default="New conversation")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -62,7 +63,8 @@ class UserFact(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid4())
     )
-    key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    device_id: Mapped[str] = mapped_column(String(64), index=True, default="default")
+    key: Mapped[str] = mapped_column(String(100), index=True)
     value: Mapped[str] = mapped_column(Text)
     confidence: Mapped[float] = mapped_column(default=1.0)
     created_at: Mapped[datetime] = mapped_column(

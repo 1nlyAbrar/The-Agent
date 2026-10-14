@@ -1,4 +1,4 @@
-﻿"""Memory service — extracts and stores facts about the user."""
+﻿"""Memory service — extracts and stores facts per device."""
 
 import json
 import logging
@@ -23,8 +23,7 @@ RULES:
 
 OUTPUT FORMAT (strict JSON array):
 [
-  {"key": "name", "value": "Abrar Faiyaz", "confidence": 1.0},
-  {"key": "location", "value": "Dhaka, Bangladesh", "confidence": 0.9}
+  {"key": "name", "value": "Abrar Faiyaz", "confidence": 1.0}
 ]
 
 CONVERSATION:
@@ -36,8 +35,8 @@ Extract facts now:"""
 async def extract_facts(
     conversation_text: str,
     session: AsyncSession,
+    device_id: str,
 ) -> list[dict]:
-    """Use the AI to extract facts from a conversation. Upsert by key."""
     from app.services.deepseek import get_deepseek_client
 
     client = get_deepseek_client()
@@ -61,7 +60,6 @@ async def extract_facts(
         facts = json.loads(raw)
         if not isinstance(facts, list):
             return []
-
     except Exception as e:
         logger.error("Fact extraction failed: %s", e)
         return []
@@ -75,7 +73,9 @@ async def extract_facts(
         if not key or not value:
             continue
 
-        stmt = select(UserFact).where(UserFact.key == key)
+        stmt = select(UserFact).where(
+            UserFact.key == key, UserFact.device_id == device_id
+        )
         result = await session.execute(stmt)
         existing = result.scalar_one_or_none()
 
@@ -84,7 +84,9 @@ async def extract_facts(
                 existing.value = value
                 existing.confidence = confidence
         else:
-            session.add(UserFact(key=key, value=value, confidence=confidence))
+            session.add(
+                UserFact(key=key, value=value, confidence=confidence, device_id=device_id)
+            )
 
         saved.append({"key": key, "value": value})
 
@@ -94,26 +96,12 @@ async def extract_facts(
     return saved
 
 
-async def get_all_facts(session: AsyncSession) -> list[dict]:
-    """Fetch all stored facts."""
-    stmt = select(UserFact).order_by(UserFact.updated_at.desc())
-    result = await session.execute(stmt)
-    facts = result.scalars().all()
-    return [
-        {
-            "id": f.id,
-            "key": f.key,
-            "value": f.value,
-            "confidence": f.confidence,
-            "updated_at": f.updated_at.isoformat() if f.updated_at else None,
-        }
-        for f in facts
-    ]
-
-
-async def build_memory_context(session: AsyncSession) -> str:
-    """Build a system prompt prefix with all known facts."""
-    stmt = select(UserFact).order_by(UserFact.updated_at.desc())
+async def build_memory_context(session: AsyncSession, device_id: str) -> str:
+    stmt = (
+        select(UserFact)
+        .where(UserFact.device_id == device_id)
+        .order_by(UserFact.updated_at.desc())
+    )
     result = await session.execute(stmt)
     facts = result.scalars().all()
 
@@ -127,25 +115,3 @@ async def build_memory_context(session: AsyncSession) -> str:
         "just use the knowledge as if you always knew.\n\n"
         "KNOWN FACTS:\n" + "\n".join(lines)
     )
-
-
-async def delete_fact(fact_id: str, session: AsyncSession) -> bool:
-    stmt = select(UserFact).where(UserFact.id == fact_id)
-    result = await session.execute(stmt)
-    fact = result.scalar_one_or_none()
-    if not fact:
-        return False
-    await session.delete(fact)
-    await session.commit()
-    return True
-
-
-async def clear_all_facts(session: AsyncSession) -> int:
-    stmt = select(UserFact)
-    result = await session.execute(stmt)
-    facts = result.scalars().all()
-    count = len(facts)
-    for f in facts:
-        await session.delete(f)
-    await session.commit()
-    return count

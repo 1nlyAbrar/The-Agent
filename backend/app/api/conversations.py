@@ -1,4 +1,4 @@
-"""Conversation CRUD API."""
+﻿"""Conversation CRUD API — isolated per device."""
 
 import json
 import logging
@@ -6,20 +6,17 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.deps import get_device_id
 from app.db.models import Conversation, Message
 from app.db.session import get_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
-
-# ============================================
-# Schemas
-# ============================================
 
 class MessageSchema(BaseModel):
     id: str
@@ -62,10 +59,6 @@ class AddMessageRequest(BaseModel):
     sources: list[dict] | None = None
 
 
-# ============================================
-# Helpers
-# ============================================
-
 def _msg_to_schema(msg: Message) -> MessageSchema:
     sources = None
     if msg.sources_json:
@@ -82,18 +75,30 @@ def _msg_to_schema(msg: Message) -> MessageSchema:
     )
 
 
-# ============================================
-# Endpoints
-# ============================================
-
-@router.get("", response_model=list[ConversationSummary])
-async def list_conversations(
-    session: AsyncSession = Depends(get_session),
-) -> list[ConversationSummary]:
-    """List all conversations (newest first) with message counts."""
+async def _get_owned_conversation(
+    conversation_id: str, device_id: str, session: AsyncSession
+) -> Conversation:
     stmt = (
         select(Conversation)
         .options(selectinload(Conversation.messages))
+        .where(Conversation.id == conversation_id, Conversation.device_id == device_id)
+    )
+    result = await session.execute(stmt)
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    return conv
+
+
+@router.get("", response_model=list[ConversationSummary])
+async def list_conversations(
+    device_id: str = Depends(get_device_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[ConversationSummary]:
+    stmt = (
+        select(Conversation)
+        .options(selectinload(Conversation.messages))
+        .where(Conversation.device_id == device_id)
         .order_by(desc(Conversation.updated_at))
     )
     result = await session.execute(stmt)
@@ -103,7 +108,6 @@ async def list_conversations(
     for c in conversations:
         preview = None
         if c.messages:
-            # First user message as preview
             first_user = next((m for m in c.messages if m.role == "user"), None)
             if first_user:
                 preview = first_user.content[:80]
@@ -123,10 +127,10 @@ async def list_conversations(
 @router.post("", response_model=ConversationSchema, status_code=201)
 async def create_conversation(
     req: CreateConversationRequest,
+    device_id: str = Depends(get_device_id),
     session: AsyncSession = Depends(get_session),
 ) -> ConversationSchema:
-    """Create a new empty conversation."""
-    conv = Conversation(title=req.title or "New conversation")
+    conv = Conversation(title=req.title or "New conversation", device_id=device_id)
     session.add(conv)
     await session.commit()
     await session.refresh(conv, ["messages"])
@@ -142,19 +146,15 @@ async def create_conversation(
 @router.get("/search", response_model=list[ConversationSummary])
 async def search_conversations(
     q: str = Query(..., min_length=1),
+    device_id: str = Depends(get_device_id),
     session: AsyncSession = Depends(get_session),
 ) -> list[ConversationSummary]:
-    """Search conversations by title or message content."""
     pattern = f"%{q}%"
     stmt = (
         select(Conversation)
         .options(selectinload(Conversation.messages))
-        .where(
-            or_(
-                Conversation.title.ilike(pattern),
-                Conversation.messages.any(Message.content.ilike(pattern)),
-            )
-        )
+        .where(Conversation.device_id == device_id)
+        .where(Conversation.title.ilike(pattern))
         .order_by(desc(Conversation.updated_at))
         .limit(50)
     )
@@ -175,19 +175,10 @@ async def search_conversations(
 @router.get("/{conversation_id}", response_model=ConversationSchema)
 async def get_conversation(
     conversation_id: str,
+    device_id: str = Depends(get_device_id),
     session: AsyncSession = Depends(get_session),
 ) -> ConversationSchema:
-    """Get a single conversation with all messages."""
-    stmt = (
-        select(Conversation)
-        .options(selectinload(Conversation.messages))
-        .where(Conversation.id == conversation_id)
-    )
-    result = await session.execute(stmt)
-    conv = result.scalar_one_or_none()
-    if not conv:
-        raise HTTPException(404, "Conversation not found")
-
+    conv = await _get_owned_conversation(conversation_id, device_id, session)
     return ConversationSchema(
         id=conv.id,
         title=conv.title,
@@ -201,23 +192,13 @@ async def get_conversation(
 async def rename_conversation(
     conversation_id: str,
     req: RenameConversationRequest,
+    device_id: str = Depends(get_device_id),
     session: AsyncSession = Depends(get_session),
 ) -> ConversationSchema:
-    """Rename a conversation."""
-    stmt = (
-        select(Conversation)
-        .options(selectinload(Conversation.messages))
-        .where(Conversation.id == conversation_id)
-    )
-    result = await session.execute(stmt)
-    conv = result.scalar_one_or_none()
-    if not conv:
-        raise HTTPException(404, "Conversation not found")
-
+    conv = await _get_owned_conversation(conversation_id, device_id, session)
     conv.title = req.title
     await session.commit()
     await session.refresh(conv, ["messages"])
-
     return ConversationSchema(
         id=conv.id,
         title=conv.title,
@@ -230,14 +211,10 @@ async def rename_conversation(
 @router.delete("/{conversation_id}", status_code=204)
 async def delete_conversation(
     conversation_id: str,
+    device_id: str = Depends(get_device_id),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    """Delete a conversation and all its messages."""
-    stmt = select(Conversation).where(Conversation.id == conversation_id)
-    result = await session.execute(stmt)
-    conv = result.scalar_one_or_none()
-    if not conv:
-        raise HTTPException(404, "Conversation not found")
+    conv = await _get_owned_conversation(conversation_id, device_id, session)
     await session.delete(conv)
     await session.commit()
 
@@ -246,14 +223,10 @@ async def delete_conversation(
 async def add_message(
     conversation_id: str,
     req: AddMessageRequest,
+    device_id: str = Depends(get_device_id),
     session: AsyncSession = Depends(get_session),
 ) -> MessageSchema:
-    """Append a message to a conversation."""
-    stmt = select(Conversation).where(Conversation.id == conversation_id)
-    result = await session.execute(stmt)
-    conv = result.scalar_one_or_none()
-    if not conv:
-        raise HTTPException(404, "Conversation not found")
+    conv = await _get_owned_conversation(conversation_id, device_id, session)
 
     msg = Message(
         conversation_id=conversation_id,
@@ -263,7 +236,6 @@ async def add_message(
     )
     session.add(msg)
 
-    # Auto-title from first user message
     if req.role == "user" and conv.title == "New conversation":
         conv.title = req.content[:60]
 
