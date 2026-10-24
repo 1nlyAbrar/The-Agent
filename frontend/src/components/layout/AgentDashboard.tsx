@@ -87,21 +87,13 @@ export function AgentDashboard() {
             description: visionResponse.slice(0, 200),
             duration: 10000,
           });
-          const visionMessage = {
-            id: crypto.randomUUID(),
-            role: "assistant" as const,
-            content: `**Image Analysis — ${result.document.name}**\n\n${visionResponse}`,
-          };
+          
           let convId = activeId;
           if (!convId) convId = await newConversation();
+          
           if (convId) {
-            setConversations((prev) =>
-              prev.map((c) =>
-                c.id === convId
-                  ? { ...c, messages: [...c.messages, visionMessage] }
-                  : c
-              )
-            );
+            await addUserMessage(convId, `[Uploaded image: ${result.document.name}]`);
+            await addAssistantMessage(convId, `**Image Analysis — ${result.document.name}**\n\n${visionResponse}`);
           }
         } else {
           toast.success(`Uploaded ${result.document.name}`, {
@@ -121,7 +113,7 @@ export function AgentDashboard() {
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [useDocuments, activeId, newConversation]
+    [useDocuments, activeId, newConversation, addUserMessage, addAssistantMessage]
   );
 
   async function handleNewChat() {
@@ -177,8 +169,6 @@ export function AgentDashboard() {
         if (speakResponses) {
           speak(finalContent);
         }
-
-        setTimeout(() => setMemoryRefreshKey((k) => k + 1), 3000);
       },
       { useDocuments, onSources: handleSources }
     );
