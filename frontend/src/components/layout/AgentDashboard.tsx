@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -19,11 +19,14 @@ import {
   Square,
   Trash2,
   User,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AIEmblem } from "@/components/layout/AIEmblem";
 import { useChatStream } from "@/hooks/useChatStream";
 import { useConversations } from "@/hooks/useConversations";
+import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 import { DocumentPanel } from "@/components/upload/DocumentPanel";
 import { HudClock } from "@/components/layout/HudClock";
@@ -34,6 +37,7 @@ export function AgentDashboard() {
   const [input, setInput] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [useDocuments, setUseDocuments] = useState(false);
+  const [speakResponses, setSpeakResponses] = useState(false);
   const [pendingSources, setPendingSources] = useState<Source[]>([]);
   const [uploading, setUploading] = useState(false);
   const [documentsRefreshKey, setDocumentsRefreshKey] = useState(0);
@@ -52,10 +56,11 @@ export function AgentDashboard() {
 
   const { isStreaming, streamingContent, error, startStream, stopStream, reset } =
     useChatStream();
+    
+  const { speak } = useSpeechSynthesis();
 
   const activeConversation = conversations.find((c) => c.id === activeId) ?? null;
 
-  // Auto-select the first conversation if none selected
   useEffect(() => {
     if (!activeId && conversations.length > 0) {
       setLocalActive(conversations[0].id);
@@ -74,10 +79,36 @@ export function AgentDashboard() {
         setUploading(true);
         toast.loading(`Uploading ${file.name}...`, { id: "upload" });
         const result = await uploadDocument(file);
-        toast.success(`Uploaded ${result.document.name}`, {
-          id: "upload",
-          description: `${result.document.pages_parsed} pages · ${result.document.chunks_added} chunks`,
-        });
+
+        const visionResponse = (result as any).visionResponse as string | undefined;
+        if (visionResponse) {
+          toast.success(`Analyzed ${result.document.name}`, {
+            id: "upload",
+            description: visionResponse.slice(0, 200),
+            duration: 10000,
+          });
+          const visionMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant" as const,
+            content: `**Image Analysis — ${result.document.name}**\n\n${visionResponse}`,
+          };
+          let convId = activeId;
+          if (!convId) convId = await newConversation();
+          if (convId) {
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === convId
+                  ? { ...c, messages: [...c.messages, visionMessage] }
+                  : c
+              )
+            );
+          }
+        } else {
+          toast.success(`Uploaded ${result.document.name}`, {
+            id: "upload",
+            description: `${result.document.pages_parsed} pages · ${result.document.chunks_added} chunks`,
+          });
+        }
         setDocumentsRefreshKey((k) => k + 1);
         if (!useDocuments) setUseDocuments(true);
       } catch (err) {
@@ -90,7 +121,7 @@ export function AgentDashboard() {
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [useDocuments]
+    [useDocuments, activeId, newConversation]
   );
 
   async function handleNewChat() {
@@ -118,18 +149,15 @@ export function AgentDashboard() {
     if (!content || isStreaming) return;
 
     let convId = activeId;
-    // Auto-create a conversation if none exists
     if (!convId) {
       convId = await newConversation();
       if (!convId) return;
     }
 
-    // Save user message to DB + optimistically update UI
     await addUserMessage(convId, content);
     setInput("");
     setPendingSources([]);
 
-    // Build full message history for context (existing + new user msg)
     const conv = conversations.find((c) => c.id === convId);
     const prior = conv?.messages ?? [];
     const apiMessages = [
@@ -137,7 +165,6 @@ export function AgentDashboard() {
       { role: "user" as const, content },
     ];
 
-    // Stream response
     await startStream(
       apiMessages,
       async (finalContent) => {
@@ -146,6 +173,12 @@ export function AgentDashboard() {
           finalContent,
           pendingSources.length > 0 ? pendingSources : undefined
         );
+        
+        if (speakResponses) {
+          speak(finalContent);
+        }
+
+        setTimeout(() => setMemoryRefreshKey((k) => k + 1), 3000);
       },
       { useDocuments, onSources: handleSources }
     );
@@ -207,7 +240,7 @@ export function AgentDashboard() {
             Conversations
           </div>
 
-                    <div className="flex-1 space-y-1 overflow-y-auto px-3">
+          <div className="flex-1 space-y-1 overflow-y-auto px-3">
             {conversations.length === 0 && (
               <div className="flex flex-col items-center justify-center py-10 text-center opacity-60">
                 <MessageSquare className="mb-2 h-8 w-8 text-cyan-400/50" />
@@ -276,6 +309,20 @@ export function AgentDashboard() {
 
           <div className="flex items-center gap-3">
             <HudClock variant="hud" isActive={isStreaming} />
+            
+            <button
+              type="button"
+              onClick={() => setSpeakResponses((v) => !v)}
+              className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                speakResponses
+                  ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300"
+                  : "border-white/10 text-slate-400 hover:border-cyan-400/30 hover:text-cyan-400"
+              }`}
+              title="Speak AI responses aloud"
+            >
+              {speakResponses ? <Volume2 size={13} /> : <VolumeX size={13} />}
+              Voice {speakResponses ? "ON" : "OFF"}
+            </button>
 
             <button
               type="button"
@@ -463,7 +510,7 @@ export function AgentDashboard() {
 
           <div className="shrink-0 px-4 pb-5 pt-2 md:px-8">
             <div
-                                          className="mx-auto max-w-3xl rounded-2xl border border-cyan-400/40 p-3 backdrop-blur-2xl transition-all duration-300 focus-within:border-cyan-400 focus-within:shadow-[0_0_30px_rgba(0,223,255,0.4)]"
+              className="mx-auto max-w-3xl rounded-2xl border border-cyan-400/40 p-3 backdrop-blur-2xl transition-all duration-300 focus-within:border-cyan-400 focus-within:shadow-[0_0_30px_rgba(0,223,255,0.4)]"
               style={{
                 backgroundColor: "#F5FAFF",
                 boxShadow:
@@ -494,7 +541,7 @@ export function AgentDashboard() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls,.json"
+                    accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls,.json,.png,.jpg,.jpeg,.webp"
                     onChange={handleAttach}
                     className="hidden"
                   />
@@ -502,8 +549,8 @@ export function AgentDashboard() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
-                    aria-label="Attach document"
-                    title="Attach a document (PDF, DOCX, TXT, CSV, XLSX)"
+                    aria-label="Attach file"
+                    title="Attach document or image"
                     className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-500 transition hover:border-cyan-500 hover:bg-cyan-50 hover:text-cyan-600 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {uploading ? (
@@ -517,7 +564,7 @@ export function AgentDashboard() {
                     {isStreaming
                       ? "Streaming response..."
                       : uploading
-                      ? "Uploading document..."
+                      ? "Uploading..."
                       : useDocuments
                       ? "Documents mode ON"
                       : "Shift + Enter for a new line"}
