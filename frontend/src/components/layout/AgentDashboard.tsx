@@ -207,11 +207,13 @@ export function AgentDashboard() {
             Conversations
           </div>
 
-          <div className="flex-1 space-y-1 overflow-y-auto px-3">
+                    <div className="flex-1 space-y-1 overflow-y-auto px-3">
             {conversations.length === 0 && (
-              <p className="px-3 py-2 text-xs text-slate-500">
-                No conversations yet. Start a new chat.
-              </p>
+              <div className="flex flex-col items-center justify-center py-10 text-center opacity-60">
+                <MessageSquare className="mb-2 h-8 w-8 text-cyan-400/50" />
+                <p className="text-xs text-slate-400">No chats yet</p>
+                <p className="mt-1 text-[10px] text-slate-500">Start a new conversation above</p>
+              </div>
             )}
             {conversations.map((conversation) => (
               <div
@@ -461,7 +463,7 @@ export function AgentDashboard() {
 
           <div className="shrink-0 px-4 pb-5 pt-2 md:px-8">
             <div
-              className="mx-auto max-w-3xl rounded-2xl border border-cyan-400/40 p-3 backdrop-blur-2xl"
+                                          className="mx-auto max-w-3xl rounded-2xl border border-cyan-400/40 p-3 backdrop-blur-2xl transition-all duration-300 focus-within:border-cyan-400 focus-within:shadow-[0_0_30px_rgba(0,223,255,0.4)]"
               style={{
                 backgroundColor: "#F5FAFF",
                 boxShadow:

@@ -126,8 +126,12 @@ export function DocumentPanel({ onDocumentsChange }: DocumentPanelProps) {
         )}
       </div>
 
-      {loading ? (
-        <div className="px-3 py-2 text-xs text-slate-500">Loading...</div>
+            {loading ? (
+        <div className="space-y-2 px-3 py-2">
+          <div className="h-3 w-3/4 animate-pulse rounded bg-white/10" />
+          <div className="h-3 w-1/2 animate-pulse rounded bg-white/10" />
+          <div className="h-3 w-2/3 animate-pulse rounded bg-white/10" />
+        </div>
       ) : documents.length === 0 ? (
         <p className="px-3 py-2 text-xs text-slate-500">
           No documents yet.
